@@ -1,3 +1,5 @@
+pragma solidity 0.4.19;
+
 contract MonitoringEngine{
     
     //Variable change event
@@ -45,81 +47,89 @@ contract MonitoringEngine{
     
     //the current properties monitored for
     mapping(bytes32 => FSM) currentProperties;
+    mapping(address => bytes32[]) userProperties;
+    mapping(string => address[]) userInterestedCalls;
     
-    function startProperty(bytes32 hash, uint currentState){
-        FSM prop;
+////////////////////////////////////////////////
+// Adding Properties that are to be monitored //
+////////////////////////////////////////////////
+    
+    //Starting a new property, given a certain hash and the initial state
+    function startProperty(bytes32 hash, uint currentState) internal{
+        FSM memory prop;
         currentProperties[hash] = prop;
         
-        State state;
+        State memory state;
         state.no = currentState;
         state.exists = true;
         
         prop.currentState = state;
+        
+        userProperties[msg.sender].push(hash);
     }
     
-    function addPropertyTransition(bytes32 hash, uint fromState, MethodCall ev, uint toState){
-        State from;
+    //Adding transition with a method call
+    function addPropertyTransition(bytes32 hash, uint fromState, MethodCall ev, uint toState) internal{
+        State memory from;
         from.no = fromState;
         from.exists = true;
         
-        State to;
+        State memory to;
         to.no = toState;
         to.exists = true;
 
     
-        Tuple tuple;
+        Tuple memory tuple;
         tuple.m = ev;
         tuple.state = from;
         tuple.exists = true;
         
         currentProperties[hash].transitionsHash[bytes32(keccak256(tuple))] = tuple;
         currentProperties[hash].eventsToState[bytes32(keccak256(tuple))] = to;
+        
+        userInterestedCalls[ev.name].push(msg.sender);
     }
     
-    function addPropertyTransition(bytes32 hash, uint fromState, VariableChange ev, uint toState){
-        State from;
+    //Adding transition with a variable change
+    function addPropertyTransition(bytes32 hash, uint fromState, VariableChange ev, uint toState) internal{
+        State memory from;
         from.no = fromState;
         from.exists = true;
         
-        State to;
+        State memory to;
         to.no = toState;
         to.exists = true;
 
     
-        Tuple tuple;
+        Tuple memory tuple;
         tuple.v = ev;
         tuple.state = from;
         tuple.exists = true;
         
         currentProperties[hash].transitionsHash[bytes32(keccak256(tuple))] = tuple;
         currentProperties[hash].eventsToState[bytes32(keccak256(tuple))] = to;
+        
+        userInterestedCalls[ev.name].push(msg.sender);
     }
 
-    function addFinalState(bytes32 hash, uint finalState){
+    //Adding final states
+    function addFinalState(bytes32 hash, uint finalState) internal{
         currentProperties[hash].finalStates[finalState] = true;
     }
     
-    function trigger(bytes32 hash, MethodCall method) returns(bool){
-        Tuple tuple;
+//////////////////////////////////////////////////////
+// Handing transitioning in properties given events //
+//////////////////////////////////////////////////////
+    
+    //Trigger FSM with given hash, with method call event
+    function trigger(bytes32 hash, MethodCall method) internal returns(bool){
+        Tuple memory tuple;
         tuple.state = currentProperties[hash].currentState;
         tuple.m = method;
         tuple.exists = true;
         
         bytes32 tupleHash = bytes32(keccak256(tuple));
-        State next = currentProperties[hash].eventsToState[tupleHash];
-        if(currentProperties[hash].eventsToState[tupleHash].exists){
-            currentProperties[hash].currentState = next;
-        }
-    }
-    
-    function trigger(bytes32 hash, VariableChange variableChange) returns(bool){
-        Tuple tuple;
-        tuple.state = currentProperties[hash].currentState;
-        tuple.v = variableChange;
-        tuple.exists = true;
-        
-        bytes32 tupleHash = bytes32(keccak256(tuple));
-        State next = currentProperties[hash].eventsToState[tupleHash];
+        State memory next = currentProperties[hash].eventsToState[tupleHash];
         if(currentProperties[hash].eventsToState[tupleHash].exists){
             currentProperties[hash].currentState = next;
         }
@@ -129,6 +139,83 @@ contract MonitoringEngine{
         }
         else{
             return true;
+        }
+    }
+    
+    //Trigger FSM with given hash, with variable change event
+    function trigger(bytes32 hash, VariableChange variableChange) internal returns(bool){
+        Tuple memory tuple;
+        tuple.state = currentProperties[hash].currentState;
+        tuple.v = variableChange;
+        tuple.exists = true;
+        
+        bytes32 tupleHash = bytes32(keccak256(tuple));
+        State memory next = currentProperties[hash].eventsToState[tupleHash];
+        if(currentProperties[hash].eventsToState[tupleHash].exists){
+            currentProperties[hash].currentState = next;
+        }
+                    
+        if(currentProperties[hash].finalStates[currentProperties[hash].currentState.no]){
+            return false;
+        }
+        else{
+            return true;
+        }
+    }
+    
+    //Trigger all FSMs user is interested in with given call
+    function trigger(address user, MethodCall call) internal{
+        bytes32[] memory FSMtoTrigger = userProperties[user];
+        
+        for(uint i = 0; i < FSMtoTrigger.length; i++){
+            bytes32 hash = FSMtoTrigger[i];
+            trigger(hash, call);
+        }
+    }
+    
+    //Trigger all FSMs user is interested in with given variable change
+    function trigger(address user, VariableChange variableChange) internal{
+        bytes32[] memory FSMtoTrigger = userProperties[user];
+        
+        for(uint i = 0; i < FSMtoTrigger.length; i++){
+            bytes32 hash = FSMtoTrigger[i];
+            trigger(hash, variableChange);
+        }
+    }
+
+    //Trigger all FSMs using given call
+    function trigger(MethodCall call) internal{
+        address[] memory interestedUsers = userInterestedCalls[call.name];
+        
+        for(uint i = 0; i < interestedUsers.length; i++){
+            trigger(interestedUsers[i], call);
+        }
+    }
+
+    //Trigger all FSMs using given variable change
+    function trigger(VariableChange variableChange) internal{
+        address[] memory interestedUsers = userInterestedCalls[variableChange.name];
+        
+        for(uint i = 0; i < interestedUsers.length; i++){
+            trigger(interestedUsers[i], variableChange);
+        }
+    }
+
+    //Method called by instrumentation points in monitored contracts
+    function handleEvent(string name, bool methodCall, bool variableChange) internal{
+        if(methodCall){
+            MethodCall memory call;
+            call.name = name;
+            call.exists = true;
+            
+            trigger(call);
+        }
+        else if(variableChange){
+            VariableChange memory change;
+            change.name = name;
+            change.exists = true;
+            
+            trigger(change);
         }
     }
 }
