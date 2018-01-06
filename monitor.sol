@@ -46,7 +46,8 @@ contract MonitoringEngine{
     }
     
     //the current properties monitored for
-    mapping(bytes32 => FSM) currentProperties;
+    mapping(bytes32 => FSM) allProperties;
+    mapping(bytes32 => bool) activeProperties;
     mapping(address => bytes32[]) userProperties;
     mapping(string => address[]) userInterestedCalls;
     
@@ -54,11 +55,13 @@ contract MonitoringEngine{
 // Adding Properties that are to be monitored //
 ////////////////////////////////////////////////
     
+    //TODO hash needs to be created by this contract
+    
     //Starting a new property, given a certain hash and the initial state
-    function startProperty(bytes32 hash, uint currentState) internal{
+    function startProperty(bytes32 hash, uint currentState){
         FSM memory prop;
         currentProperties[hash] = prop;
-        
+
         State memory state;
         state.no = currentState;
         state.exists = true;
@@ -69,7 +72,7 @@ contract MonitoringEngine{
     }
     
     //Adding transition with a method call
-    function addPropertyTransition(bytes32 hash, uint fromState, MethodCall ev, uint toState) internal{
+    function addPropertyTransition(bytes32 hash, uint fromState, MethodCall ev, uint toState){
         State memory from;
         from.no = fromState;
         from.exists = true;
@@ -91,7 +94,7 @@ contract MonitoringEngine{
     }
     
     //Adding transition with a variable change
-    function addPropertyTransition(bytes32 hash, uint fromState, VariableChange ev, uint toState) internal{
+    function addPropertyTransition(bytes32 hash, uint fromState, VariableChange ev, uint toState){
         State memory from;
         from.no = fromState;
         from.exists = true;
@@ -113,8 +116,18 @@ contract MonitoringEngine{
     }
 
     //Adding final states
-    function addFinalState(bytes32 hash, uint finalState) internal{
-        currentProperties[hash].finalStates[finalState] = true;
+    function addFinalState(bytes32 hash, uint finalState){
+        allProperties[hash].finalStates[finalState] = true;
+    }
+    
+    //Activate monitoring of property
+    function activatePropertyMonitoring(bytes32 hash){
+        activeProperties[hash] = true;
+    }
+    
+    //Stop monitoring of property
+    function stopPropertyMonitoring(bytes32 hash){
+        activeProperties[hash] = false;
     }
     
 //////////////////////////////////////////////////////
@@ -123,18 +136,20 @@ contract MonitoringEngine{
     
     //Trigger FSM with given hash, with method call event
     function trigger(bytes32 hash, MethodCall method) internal returns(bool){
+        if(activeProperties[hash]) return true;
+        
         Tuple memory tuple;
-        tuple.state = currentProperties[hash].currentState;
+        tuple.state = allProperties[hash].currentState;
         tuple.m = method;
         tuple.exists = true;
         
         bytes32 tupleHash = bytes32(keccak256(tuple));
-        State memory next = currentProperties[hash].eventsToState[tupleHash];
-        if(currentProperties[hash].eventsToState[tupleHash].exists){
-            currentProperties[hash].currentState = next;
+        State memory next = allProperties[hash].eventsToState[tupleHash];
+        if(allProperties[hash].eventsToState[tupleHash].exists){
+            allProperties[hash].currentState = next;
         }
                     
-        if(currentProperties[hash].finalStates[currentProperties[hash].currentState.no]){
+        if(allProperties[hash].finalStates[allProperties[hash].currentState.no]){
             return false;
         }
         else{
@@ -144,18 +159,20 @@ contract MonitoringEngine{
     
     //Trigger FSM with given hash, with variable change event
     function trigger(bytes32 hash, VariableChange variableChange) internal returns(bool){
+        if(activeProperties[hash]) return true;
+        
         Tuple memory tuple;
-        tuple.state = currentProperties[hash].currentState;
+        tuple.state = allProperties[hash].currentState;
         tuple.v = variableChange;
         tuple.exists = true;
         
         bytes32 tupleHash = bytes32(keccak256(tuple));
-        State memory next = currentProperties[hash].eventsToState[tupleHash];
-        if(currentProperties[hash].eventsToState[tupleHash].exists){
-            currentProperties[hash].currentState = next;
+        State memory next = allProperties[hash].eventsToState[tupleHash];
+        if(allProperties[hash].eventsToState[tupleHash].exists){
+            allProperties[hash].currentState = next;
         }
                     
-        if(currentProperties[hash].finalStates[currentProperties[hash].currentState.no]){
+        if(allProperties[hash].finalStates[allProperties[hash].currentState.no]){
             return false;
         }
         else{
@@ -201,12 +218,8 @@ contract MonitoringEngine{
         }
     }
 
-///////////////////////////////////////////////
-// Handling calls from instrumented contract //
-///////////////////////////////////////////////
-
     //Method called by instrumentation points in monitored contracts
-    function handleEvent(string name, bool methodCall, bool variableChange) public{
+    function handleEvent(string name, bool methodCall, bool variableChange) internal{
         if(methodCall){
             MethodCall memory call;
             call.name = name;
