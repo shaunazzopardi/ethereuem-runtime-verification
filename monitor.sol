@@ -201,8 +201,12 @@ contract MonitoringEngine{
         }
     }
 
+///////////////////////////////////////////////
+// Handling calls from instrumented contract //
+///////////////////////////////////////////////
+
     //Method called by instrumentation points in monitored contracts
-    function handleEvent(string name, bool methodCall, bool variableChange) internal{
+    function handleEvent(string name, bool methodCall, bool variableChange) public{
         if(methodCall){
             MethodCall memory call;
             call.name = name;
