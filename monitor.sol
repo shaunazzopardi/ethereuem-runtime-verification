@@ -1,4 +1,5 @@
 pragma solidity 0.4.19;
+pragma experimental ABIEncoderV2;
 
 contract MonitoringEngine{
     
@@ -45,7 +46,6 @@ contract MonitoringEngine{
         mapping(bytes32 => State) eventsToState;
     }
     
-    //the current properties monitored for
     mapping(bytes32 => FSM) allProperties;
     mapping(bytes32 => bool) activeProperties;
     mapping(address => bytes32[]) userProperties;
@@ -60,7 +60,7 @@ contract MonitoringEngine{
     //Starting a new property, given a certain hash and the initial state
     function startProperty(bytes32 hash, uint currentState){
         FSM memory prop;
-        currentProperties[hash] = prop;
+        allProperties[hash] = prop;
 
         State memory state;
         state.no = currentState;
@@ -87,14 +87,14 @@ contract MonitoringEngine{
         tuple.state = from;
         tuple.exists = true;
         
-        currentProperties[hash].transitionsHash[bytes32(keccak256(tuple))] = tuple;
-        currentProperties[hash].eventsToState[bytes32(keccak256(tuple))] = to;
+        allProperties[hash].transitionsHash[bytes32(keccak256(tuple))] = tuple;
+        allProperties[hash].eventsToState[bytes32(keccak256(tuple))] = to;
         
         userInterestedCalls[ev.name].push(msg.sender);
     }
     
     //Adding transition with a variable change
-    function addPropertyTransition(bytes32 hash, uint fromState, VariableChange ev, uint toState){
+    function addPropertyTransition(bytes32 hash, uint fromState, VariableChange memory ev, uint toState){
         State memory from;
         from.no = fromState;
         from.exists = true;
@@ -102,15 +102,14 @@ contract MonitoringEngine{
         State memory to;
         to.no = toState;
         to.exists = true;
-
     
         Tuple memory tuple;
         tuple.v = ev;
         tuple.state = from;
         tuple.exists = true;
         
-        currentProperties[hash].transitionsHash[bytes32(keccak256(tuple))] = tuple;
-        currentProperties[hash].eventsToState[bytes32(keccak256(tuple))] = to;
+        allProperties[hash].transitionsHash[bytes32(keccak256(tuple))] = tuple;
+        allProperties[hash].eventsToState[bytes32(keccak256(tuple))] = to;
         
         userInterestedCalls[ev.name].push(msg.sender);
     }
@@ -136,7 +135,7 @@ contract MonitoringEngine{
     
     //Trigger FSM with given hash, with method call event
     function trigger(bytes32 hash, MethodCall method) internal returns(bool){
-        if(activeProperties[hash]) return true;
+        if(!activeProperties[hash]) return false;
         
         Tuple memory tuple;
         tuple.state = allProperties[hash].currentState;
@@ -159,7 +158,7 @@ contract MonitoringEngine{
     
     //Trigger FSM with given hash, with variable change event
     function trigger(bytes32 hash, VariableChange variableChange) internal returns(bool){
-        if(activeProperties[hash]) return true;
+        if(!activeProperties[hash]) return false;
         
         Tuple memory tuple;
         tuple.state = allProperties[hash].currentState;
