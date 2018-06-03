@@ -12,9 +12,8 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-module DEA (module DEA.DEA, module DEA.Parsing, module DEA.Instrumentation, module DEA.ParsingToSmartContract) where
+module DEA (module DEA.DEA, module DEA.Parsing, module DEA.Instrumentation) where
 
 import DEA.DEA
 import DEA.Parsing
 import DEA.Instrumentation
-import DEA.ParsingToSmartContract
